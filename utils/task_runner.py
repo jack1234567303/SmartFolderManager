@@ -54,6 +54,10 @@ class TaskRunner:
 
         last_progress_time = 0.0
         progress_throttle_sec = 0.04  # 节流间隔约 40ms (25fps)，彻底杜绝大目录高频回调卡死事件循环
+        last_log_time = 0.0
+        log_throttle_sec = 0.1
+        log_buffer = []
+        dropped_log_count = 0
 
         def safe_ui_call(callback: Optional[Callable], *args):
             if not callback:
@@ -65,6 +69,20 @@ class TaskRunner:
                     pass
             else:
                 callback(*args)
+
+        def flush_log_buffer():
+            nonlocal last_log_time, dropped_log_count
+            if not on_log or not log_buffer:
+                return
+
+            messages = list(log_buffer)
+            log_buffer.clear()
+            dropped = dropped_log_count
+            dropped_log_count = 0
+            if dropped:
+                messages.insert(0, f"（日志过于频繁，已合并 {dropped} 条中间日志）")
+            last_log_time = time.time()
+            safe_ui_call(on_log, "\n".join(messages))
 
         def thread_target():
             nonlocal last_progress_time
@@ -78,15 +96,28 @@ class TaskRunner:
                     safe_ui_call(on_progress, percent, message)
 
             def log_bridge(msg: str):
-                safe_ui_call(on_log, msg)
+                nonlocal dropped_log_count
+                if not on_log:
+                    return
+                log_buffer.append(str(msg))
+                # 单次 UI 回调最多携带 50 条日志；保留最新消息，避免大批量
+                # 操作把主线程队列塞满。
+                if len(log_buffer) > 50:
+                    log_buffer.pop(0)
+                    dropped_log_count += 1
+                now = time.time()
+                if now - last_log_time >= log_throttle_sec:
+                    flush_log_buffer()
 
             try:
                 result = worker_func(token, progress_bridge, log_bridge)
+                flush_log_buffer()
                 if token.is_cancelled:
                     safe_ui_call(on_cancelled)
                 else:
                     safe_ui_call(on_success, result)
             except Exception as e:
+                flush_log_buffer()
                 if token.is_cancelled:
                     safe_ui_call(on_cancelled)
                 else:

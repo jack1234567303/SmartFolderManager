@@ -103,13 +103,17 @@ class HistoryTab(ctk.CTkFrame):
             return
 
         res = undo_mgr.undo_transaction(tx_id)
+        self.refresh_history()
+        if res["restored"] and self.on_changed:
+            self.on_changed()
         if res["success"]:
             messagebox.showinfo("撤销成功", f"{res['message']}", parent=top_win)
-            self.refresh_history()
-            if self.on_changed:
-                self.on_changed()
         else:
-            messagebox.showerror("撤销失败", res["message"], parent=top_win)
+            details = "\n".join(res.get("errors", []))
+            message = res["message"]
+            if details:
+                message += f"\n\n{details}"
+            messagebox.showwarning("撤销未完全成功", message, parent=top_win)
 
     def _on_clear_history(self):
         top_win = self.winfo_toplevel()

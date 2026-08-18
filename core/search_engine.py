@@ -133,10 +133,18 @@ class SearchEngine:
         if not all_rel_paths:
             return []
 
+        if log_cb:
+            log_cb(f"共发现 {len(all_rel_paths)} 个条目，将分批交给 AI 分析，避免遗漏后面的文件。")
+
         if progress_cb:
             progress_cb(0.3, "正在请求大模型进行语义意图匹配...")
 
-        matched_rel_paths = AIService.ai_semantic_search(all_rel_paths, query)
+        matched_rel_paths = AIService.ai_semantic_search(
+            all_rel_paths,
+            query,
+            token=token,
+            progress_cb=progress_cb
+        )
 
         results = []
         for rel in matched_rel_paths:

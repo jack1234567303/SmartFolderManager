@@ -1,6 +1,6 @@
 import os
 import hashlib
-from typing import List, Dict, Any, Callable, Optional
+from typing import List, Dict, Any, Callable, Optional, Tuple
 from collections import defaultdict
 from utils.file_utils import format_size, format_time
 from utils.task_runner import CancellationToken
@@ -24,6 +24,34 @@ class Deduplicator:
             return md5_obj.hexdigest()
         except Exception:
             return None
+
+    @classmethod
+    def verify_file_snapshot(
+        cls,
+        file_info: Dict[str, Any],
+        expected_md5: str,
+        token: Optional[CancellationToken] = None
+    ) -> Tuple[bool, str]:
+        """确认扫描结果仍对应当前文件，避免清理过期结果。"""
+        path = file_info.get("path", "")
+        if not os.path.isfile(path):
+            return False, "文件已不存在"
+
+        try:
+            current_size = os.path.getsize(path)
+        except OSError as exc:
+            return False, f"无法读取文件大小: {exc}"
+
+        expected_size = file_info.get("size_raw")
+        if expected_size is not None and current_size != expected_size:
+            return False, "文件大小已发生变化"
+
+        current_md5 = cls.get_file_md5(path, token=token)
+        if current_md5 is None:
+            return False, "无法重新计算文件哈希"
+        if current_md5 != expected_md5:
+            return False, "文件内容已发生变化"
+        return True, ""
 
     @classmethod
     def find_duplicate_files(

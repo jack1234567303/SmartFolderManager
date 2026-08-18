@@ -88,6 +88,17 @@ class ClassifyTab(ctk.CTkFrame):
     def _on_cancel_clicked(self):
         self.task_runner.cancel_current_task()
 
+    def _confirm_ai_privacy(self, parent) -> bool:
+        """AI 分类会读取文本片段，先让用户明确同意数据外发。"""
+        return messagebox.askyesno(
+            "AI 隐私提示",
+            "AI 智能分类会读取每个文件的文件名和最多约 2000 个字符的文本片段，\n"
+            "并发送到当前配置的大模型服务商进行分析。\n\n"
+            "请不要对包含密码、个人信息或公司机密的目录使用此功能。\n\n"
+            "仍要继续吗？",
+            parent=parent
+        )
+
     def _on_preview_clicked(self):
         top_win = self.winfo_toplevel()
         path = self.get_current_path()
@@ -96,6 +107,8 @@ class ClassifyTab(ctk.CTkFrame):
             return
 
         mode = self.mode_combo.get()
+        if mode == "AI 智能分类" and not self._confirm_ai_privacy(top_win):
+            return
         self._set_buttons_state(True)
         self.result_table.clear()
         self.progress_panel.start_progress(f"正在分析并生成【{mode}】预览...")
@@ -145,6 +158,8 @@ class ClassifyTab(ctk.CTkFrame):
             return
 
         mode = self.mode_combo.get()
+        if mode == "AI 智能分类" and not self._confirm_ai_privacy(top_win):
+            return
         if not messagebox.askyesno("确认分类", f"即将对路径下的所有文件按【{mode}】进行分类整理并移动至子文件夹。\n\n是否继续？（可在历史记录中一键撤销）", parent=top_win):
             return
 

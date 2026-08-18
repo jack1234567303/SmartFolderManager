@@ -6,10 +6,11 @@ from utils.file_utils import (
     TYPE_MAPPING,
     get_file_category_by_ext,
     format_size,
-    get_safe_destination_path
+    get_safe_destination_path,
+    get_safe_child_path
 )
 from utils.task_runner import CancellationToken
-from core.undo_manager import undo_mgr
+from core.undo_manager import UndoManager, undo_mgr
 from ai.ai_service import AIService
 
 SIZE_RANGES = {
@@ -52,7 +53,12 @@ class Classifier:
 
         elif mode in ("按修改日期", "按创建日期"):
             stat = os.stat(file_path)
-            t = stat.st_ctime if date_field == "ctime" else stat.st_mtime
+            # Windows 的 ctime 通常是创建时间；Linux/macOS 的 ctime 是元数据
+            # 变更时间，因此跨平台时把“创建日期”降级为修改日期更诚实。
+            effective_date_field = date_field
+            if mode == "按创建日期" and date_field == "mtime":
+                effective_date_field = "ctime"
+            t = stat.st_ctime if effective_date_field == "ctime" and os.name == "nt" else stat.st_mtime
             # 按 年-月 归档，避免生成太多单个日期的琐碎文件夹
             return time.strftime("%Y年%m月", time.localtime(t))
 
@@ -93,15 +99,15 @@ class Classifier:
                 break
 
             full_path = os.path.join(src_folder, fname)
-            size_str = format_size(os.path.getsize(full_path))
-            
             try:
+                size_str = format_size(os.path.getsize(full_path))
                 cat = cls.calculate_category(full_path, mode)
+                target_dir = get_safe_child_path(src_folder, cat)
                 results.append({
                     "filename": fname,
                     "current_path": full_path,
                     "target_category": cat,
-                    "target_dir": os.path.join(src_folder, cat),
+                    "target_dir": target_dir,
                     "size": size_str,
                     "status": "待分类"
                 })
@@ -111,7 +117,7 @@ class Classifier:
                     "current_path": full_path,
                     "target_category": "分类失败",
                     "target_dir": src_folder,
-                    "size": size_str,
+                    "size": "-",
                     "status": f"错误: {str(e)}"
                 })
 
@@ -127,7 +133,8 @@ class Classifier:
         mode: str,
         token: Optional[CancellationToken] = None,
         progress_cb: Optional[Callable[[float, str], None]] = None,
-        log_cb: Optional[Callable[[str], None]] = None
+        log_cb: Optional[Callable[[str], None]] = None,
+        undo_manager: Optional[UndoManager] = None
     ) -> Tuple[int, int, List[str]]:
         """
         执行文件分类移动操作
@@ -144,7 +151,8 @@ class Classifier:
                 log_cb("当前目录下没有需要分类的文件。")
             return 0, 0, []
 
-        tx = undo_mgr.create_transaction(f"{mode}分类", f"分类目录: {src_folder}")
+        manager = undo_manager or undo_mgr
+        tx = manager.create_transaction(f"{mode}分类", f"分类目录: {src_folder}")
 
         if log_cb:
             log_cb(f"开始执行【{mode}】，正在处理 {total} 个文件...")
@@ -158,7 +166,7 @@ class Classifier:
             src_path = os.path.join(src_folder, fname)
             try:
                 cat = cls.calculate_category(src_path, mode)
-                dst_dir = os.path.join(src_folder, cat)
+                dst_dir = get_safe_child_path(src_folder, cat)
                 os.makedirs(dst_dir, exist_ok=True)
 
                 raw_dst_path = os.path.join(dst_dir, fname)
@@ -179,7 +187,7 @@ class Classifier:
             if progress_cb:
                 progress_cb((idx + 1) / total, f"正在分类: {fname} ({(idx + 1)}/{total})")
 
-        undo_mgr.commit_transaction(tx)
+        manager.commit_transaction(tx)
 
         if log_cb:
             log_cb(f"分类完成！成功: {success_count}, 失败: {fail_count}。操作已存入历史撤销栈。")

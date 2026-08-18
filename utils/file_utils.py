@@ -2,6 +2,77 @@ import os
 import subprocess
 import time
 import platform
+from pathlib import Path
+from typing import Optional
+
+
+_WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+}
+_INVALID_FILE_NAME_CHARS = set('<>:"/\\|?*')
+
+
+def validate_file_name(name: str) -> Optional[str]:
+    """校验一个由用户或 AI 生成的单级文件/文件夹名称。
+
+    返回 ``None`` 表示合法；否则返回可以直接展示给用户的原因。
+    这里按 Windows 的限制校验，因为项目主要运行在 Windows，同时这些限制
+    在其他系统上也不会妨碍正常使用。
+    """
+    if not isinstance(name, str):
+        return "名称必须是文本"
+    if not name:
+        return "名称不能为空"
+    if name != name.strip():
+        return "名称不能以空格开头或结尾"
+    if name in {".", ".."}:
+        return "名称不能是 . 或 .."
+    if any(ord(char) < 32 for char in name):
+        return "名称不能包含控制字符"
+    if any(char in _INVALID_FILE_NAME_CHARS for char in name):
+        return "名称不能包含 \\/:*?\"<>| 或路径分隔符"
+    if name.endswith((".", " ")):
+        return "名称不能以句点或空格结尾"
+
+    # Windows 会把 CON.txt、LPT1.log 等也视为保留设备名。
+    stem = name.split(".", 1)[0].upper()
+    if stem in _WINDOWS_RESERVED_NAMES:
+        return f"名称 {name!r} 是 Windows 保留名称"
+    if len(name) > 255:
+        return "名称长度不能超过 255 个字符"
+    return None
+
+
+def get_safe_child_path(base_path: str, child_name: str) -> str:
+    """返回根目录下的安全单级子路径，拒绝路径穿越和目录外目标。
+
+    ``Path.resolve`` 还会展开已有的符号链接/联接点，因此即使名称本身
+    看起来正常、但最终指向根目录外，也会被拒绝。
+    """
+    validation_error = validate_file_name(child_name)
+    if validation_error:
+        raise ValueError(validation_error)
+
+    try:
+        base = Path(base_path).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValueError(f"目标路径不可用: {exc}") from exc
+
+    if not base.is_dir():
+        raise ValueError("目标路径不是文件夹")
+
+    try:
+        candidate = base / child_name
+        resolved_candidate = candidate.resolve(strict=False)
+        resolved_candidate.relative_to(base)
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise ValueError("目标路径必须位于所选根目录内") from exc
+
+    # 返回未跟随最终子项符号链接的路径。这样删除/重命名链接时操作的是
+    # 链接本身，而不是链接指向的文件；上面的 resolve 只用于安全边界检查。
+    return str(candidate)
 
 # 常见拓展名到分类的映射
 TYPE_MAPPING = {

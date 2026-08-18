@@ -167,21 +167,119 @@ class ToolsTab(ctk.CTkFrame):
         if not messagebox.askyesno("清理确认", f"即将将 {len(to_trash_files)} 个多余重复副本移至系统回收站（保留每组第1个原文件）。\n\n是否继续？", parent=top_win):
             return
 
-        success_count = 0
-        fail_count = 0
-        for p in to_trash_files:
-            try:
-                send2trash(p)
-                success_count += 1
-            except Exception:
-                fail_count += 1
+        self.clean_dup_btn.configure(state="disabled")
+        self.progress_panel.start_progress("正在复核重复文件并移入回收站...")
 
-        self.progress_panel.append_log(f"重复副本清理完毕：成功移入回收站 {success_count} 个，失败 {fail_count} 个。")
-        messagebox.showinfo("清理完成", f"已将 {success_count} 个重复副本移至回收站！", parent=top_win)
-        self.duplicate_groups.clear()
-        self.result_table.clear()
-        if self.on_changed:
-            self.on_changed()
+        def worker(token, progress_cb, log_cb):
+            success_count = 0
+            fail_count = 0
+            errors = []
+            total = max(1, len(to_trash_files))
+            processed = 0
+
+            for group_index, group in enumerate(self.duplicate_groups, start=1):
+                if token.is_cancelled:
+                    break
+
+                files = group.get("files", [])
+                expected_md5 = group.get("md5", "")
+
+                # 先校验保留文件和所有副本，任意一个发生变化就跳过整组，
+                # 防止“保留文件已变更、旧副本仍被删除”的误清理。
+                group_valid = True
+                group_error = ""
+                for file_info in files:
+                    valid, reason = Deduplicator.verify_file_snapshot(
+                        file_info,
+                        expected_md5,
+                        token=token
+                    )
+                    if not valid:
+                        group_valid = False
+                        group_error = f"{file_info.get('path', '')}: {reason}"
+                        break
+
+                if not group_valid:
+                    duplicate_count = max(0, len(files) - 1)
+                    fail_count += duplicate_count
+                    errors.append(f"第 {group_index} 组已跳过：{group_error}")
+                    if log_cb:
+                        log_cb(f"⚠ 第 {group_index} 组重复结果已过期，跳过清理：{group_error}")
+                    processed += duplicate_count
+                    if progress_cb:
+                        progress_cb(processed / total, f"已复核第 {group_index} 组")
+                    continue
+
+                for file_info in files[1:]:
+                    if token.is_cancelled:
+                        break
+                    processed += 1
+                    valid, reason = Deduplicator.verify_file_snapshot(
+                        file_info,
+                        expected_md5,
+                        token=token
+                    )
+                    path = file_info.get("path", "")
+                    if not valid:
+                        fail_count += 1
+                        error = f"{path}: {reason}"
+                        errors.append(error)
+                        if log_cb:
+                            log_cb(f"⚠ 跳过过期副本: {error}")
+                        continue
+                    try:
+                        send2trash(path)
+                        success_count += 1
+                    except Exception as exc:
+                        fail_count += 1
+                        error = f"{path}: {exc}"
+                        errors.append(error)
+                        if log_cb:
+                            log_cb(f"✖ 回收失败: {error}")
+
+                    if progress_cb:
+                        progress_cb(processed / total, f"正在清理: {os.path.basename(path)}")
+
+            return success_count, fail_count, errors
+
+        def on_success(result):
+            success_count, fail_count, errors = result
+            self.clean_dup_btn.configure(state="normal")
+            self.progress_panel.finish_progress(
+                f"重复副本清理完成！成功 {success_count} 个，失败 {fail_count} 个。"
+            )
+            self.duplicate_groups.clear()
+            self.result_table.clear()
+            if self.on_changed and success_count:
+                self.on_changed()
+
+            msg = f"成功移入回收站: {success_count} 个\n失败或已跳过: {fail_count} 个"
+            if errors:
+                msg += "\n\n请重新扫描以获取最新结果。"
+            if fail_count:
+                messagebox.showwarning("清理完成（有项目跳过）", msg, parent=top_win)
+            else:
+                messagebox.showinfo("清理完成", msg, parent=top_win)
+
+        def on_error(exc):
+            self.clean_dup_btn.configure(state="normal")
+            self.progress_panel.finish_progress("重复副本清理出错")
+            messagebox.showerror("错误", str(exc), parent=top_win)
+
+        def on_cancelled():
+            self.clean_dup_btn.configure(state="normal")
+            self.progress_panel.finish_progress("重复副本清理已取消")
+            self.duplicate_groups.clear()
+            self.result_table.clear()
+
+        self.task_runner.run_task(
+            worker,
+            on_progress=self.progress_panel.update_progress,
+            on_log=self.progress_panel.append_log,
+            on_success=on_success,
+            on_error=on_error,
+            on_cancelled=on_cancelled
+        )
 
     def _on_scan_empty_folders(self):
         top_win = self.winfo_toplevel()

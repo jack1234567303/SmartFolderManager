@@ -1,6 +1,6 @@
 # 智能文件夹管理大师 Pro (Smart Folder Manager Pro)
 
-一款高颜值、高性能、生产级安全保障与多大模型赋能的现代化桌面文件智能管理工具。
+一款面向学习与实践的桌面文件智能管理工具，结合批量文件操作、可撤销事务和多大模型能力。
 
 ---
 
@@ -23,7 +23,8 @@
 4. **通用大模型赋能 (OpenAI-Compatible AI Layer)**
    - 采用标准 OpenAI API 协议抽象层，支持在设置中心自由切换 **DeepSeek**、**Moonshot (Kimi)**、**OpenAI** 或 **本地 Ollama**。
    - 提供**内容智能分类**与**自然语言语义搜索**（如“找出包含用户登录逻辑的代码”）。
-   - 密钥与偏好设置通过图形化面板持久化管理，支持一键连通性探测。
+   - 密钥与偏好设置通过图形化面板管理；也可使用 `SFM_AI_API_KEY` 环境变量，避免把密钥写进配置文件。
+   - AI 分类会把文件名和文本片段发送给配置的模型服务商，使用前请确认目录中不包含敏感信息。
 
 5. **实用文件管理工具箱 (Deduplicator & Cleaner)**
    - **两阶段高效查重**：第一阶段文件大小预筛查，第二阶段流式分块 MD5 校验，快速找出重复冗余文件并支持一键清理副本。
@@ -34,10 +35,11 @@
 ## 📂 项目模块结构 (MVC / Service 分层)
 
 ```
-FP/
+SFM/
 ├── main.py                     # 程序统一启动入口
 ├── requirements.txt            # 项目依赖清单
-├── config.json                 # 全局配置与模型偏好持久化
+├── config.json                 # 本地配置（已被 .gitignore 忽略）
+├── config.example.json         # 不含密钥的配置示例
 ├── core/                       # 核心业务逻辑层
 │   ├── classifier.py          # 智能分类引擎 (类型/大小/日期/AI) & 预览生成
 │   ├── batch_ops.py           # 批量创建、批量重命名、回收站安全删除
@@ -72,5 +74,8 @@ python main.py
 
 ### 3. 运行单元测试
 ```bash
-python -m unittest tests/test_core.py
+python -m unittest discover -s tests -v
 ```
+
+> `config.json` 只用于本机配置，不要提交 API Key。更适合在开发环境中设置
+> `SFM_AI_API_KEY`，并在密钥已经泄露时立即到服务商后台撤销/轮换。

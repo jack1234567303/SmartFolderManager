@@ -1,7 +1,9 @@
 import os
+import re
 import requests
 from typing import List, Optional, Tuple, Dict, Any
 from utils.config_manager import config_mgr
+from utils.file_utils import validate_file_name
 from ai.prompts import (
     CLASSIFICATION_SYSTEM_PROMPT,
     CLASSIFICATION_USER_PROMPT,
@@ -125,36 +127,61 @@ class AIService:
             # 过滤多余符号
             clean_label = label.replace("\n", "").replace("'", "").replace('"', "").strip()
             # 若返回过长则截断
-            return clean_label[:12] if clean_label else "其它"
+            clean_label = clean_label[:12] if clean_label else "其它"
+            if validate_file_name(clean_label):
+                # AI 输出是不可信输入，不能直接成为目录名。
+                print(f"[AIService] AI 返回了无效分类名称 [{filename}]，已回退到“其它”。")
+                return "其它"
+            return clean_label
         except Exception as e:
             print(f"[AIService] AI 分类失败 [{filename}]: {e}")
             raise e
 
     @classmethod
-    def ai_semantic_search(cls, item_list: List[str], query: str) -> List[str]:
+    def ai_semantic_search(
+        cls,
+        item_list: List[str],
+        query: str,
+        token: Optional[Any] = None,
+        progress_cb: Optional[Any] = None,
+        batch_size: int = 80
+    ) -> List[str]:
         """通过 AI 进行自然语言语义文件查找"""
         if not item_list or not query.strip():
             return []
-        
-        # 限制待选数量以防超 token 上限
-        sample_items = item_list[:120]
-        formatted_items = "\n".join(sample_items)
-        
-        user_prompt = SEMANTIC_SEARCH_USER_PROMPT.format(
-            item_list=formatted_items,
-            query=query.strip()
-        )
-        
+
+        if batch_size <= 0:
+            raise ValueError("batch_size 必须大于 0")
+
+        # 分批发送，避免只分析前一部分条目导致后面的文件永远搜不到。
+        batches = [item_list[start:start + batch_size] for start in range(0, len(item_list), batch_size)]
+        matched: List[str] = []
         try:
-            response_text = cls._call_chat_completions(SEMANTIC_SEARCH_SYSTEM_PROMPT, user_prompt, max_tokens=256)
-            if not response_text or "NO_MATCH" in response_text:
-                return []
-            
-            matched = []
-            for line in response_text.splitlines():
-                line = line.strip().strip("-*• 1234567890.")
-                if line and line in item_list and line not in matched:
-                    matched.append(line)
+            for batch_index, batch in enumerate(batches, start=1):
+                if token and token.is_cancelled:
+                    break
+
+                user_prompt = SEMANTIC_SEARCH_USER_PROMPT.format(
+                    item_list="\n".join(batch),
+                    query=query.strip()
+                )
+                response_text = cls._call_chat_completions(
+                    SEMANTIC_SEARCH_SYSTEM_PROMPT,
+                    user_prompt,
+                    max_tokens=256
+                )
+                if response_text and "NO_MATCH" not in response_text:
+                    batch_set = set(batch)
+                    for raw_line in response_text.splitlines():
+                        line = re.sub(r"^\s*(?:[-*•]\s*|\d+[.)]\s*)", "", raw_line).strip()
+                        if line in batch_set and line not in matched:
+                            matched.append(line)
+
+                if progress_cb:
+                    progress_cb(
+                        0.3 + 0.6 * batch_index / len(batches),
+                        f"正在分析第 {batch_index}/{len(batches)} 批条目..."
+                    )
             return matched
         except Exception as e:
             print(f"[AIService] AI 语义搜索失败: {e}")

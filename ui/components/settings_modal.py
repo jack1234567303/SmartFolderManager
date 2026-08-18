@@ -97,6 +97,12 @@ class SettingsModal(ctk.CTkToplevel):
         self.eye_btn = ctk.CTkCheckBox(key_row, text="显示", width=50, command=self._toggle_show_key)
         self.eye_btn.pack(side="right")
 
+        ctk.CTkLabel(
+            ai_group,
+            text="提示：也可使用环境变量 SFM_AI_API_KEY，避免将密钥写入本地配置文件。",
+            text_color="gray"
+        ).pack(anchor="w", padx=15, pady=(0, 6))
+
         # Model Name
         model_row = ctk.CTkFrame(ai_group, fg_color="transparent")
         model_row.pack(fill="x", padx=15, pady=6)

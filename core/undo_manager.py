@@ -11,19 +11,22 @@ class FileAction:
         self.src_path = src_path
         self.dst_path = dst_path
         self.timestamp = time.time()
+        self.is_undone = False
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "action_type": self.action_type,
             "src_path": self.src_path,
             "dst_path": self.dst_path,
-            "timestamp": self.timestamp
+            "timestamp": self.timestamp,
+            "is_undone": self.is_undone
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "FileAction":
         act = cls(data["action_type"], data["src_path"], data.get("dst_path", ""))
         act.timestamp = data.get("timestamp", time.time())
+        act.is_undone = data.get("is_undone", False)
         return act
 
 
@@ -62,7 +65,11 @@ class UndoManager:
     """操作历史与撤销管理器"""
     def __init__(self, history_file: str = "history.json", max_history: int = 50):
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.history_file = os.path.join(base_dir, history_file)
+        self.history_file = (
+            os.path.abspath(history_file)
+            if os.path.isabs(history_file)
+            else os.path.join(base_dir, history_file)
+        )
         self.max_history = max_history
         self.transactions: List[Transaction] = self._load_history()
 
@@ -80,6 +87,7 @@ class UndoManager:
         try:
             # 只保留最近 max_history 条记录
             self.transactions = self.transactions[-self.max_history:]
+            os.makedirs(os.path.dirname(self.history_file), exist_ok=True)
             with open(self.history_file, "w", encoding="utf-8") as f:
                 json.dump([tx.to_dict() for tx in self.transactions], f, ensure_ascii=False, indent=2)
         except Exception as e:
@@ -126,6 +134,8 @@ class UndoManager:
 
         # 逆序回滚所有动作
         for action in reversed(tx.actions):
+            if action.is_undone:
+                continue
             try:
                 if action.action_type in ("move", "rename"):
                     current_path = action.dst_path
@@ -133,26 +143,48 @@ class UndoManager:
                     if not os.path.exists(current_path):
                         errors.append(f"文件不存在，无法恢复: {current_path}")
                         continue
+                    if os.path.exists(original_path):
+                        errors.append(f"原位置已有同名路径，无法恢复: {original_path}")
+                        continue
                     # 确保原父级目录存在
                     os.makedirs(os.path.dirname(original_path), exist_ok=True)
                     shutil.move(current_path, original_path)
+                    action.is_undone = True
                     restored_count += 1
                 elif action.action_type == "create":
                     created_dir = action.src_path
-                    if os.path.exists(created_dir) and os.path.isdir(created_dir):
-                        # 如果目录为空，则清理删除
-                        if not os.listdir(created_dir):
-                            os.rmdir(created_dir)
-                            restored_count += 1
+                    if not os.path.exists(created_dir):
+                        errors.append(f"创建的文件夹不存在，无法删除: {created_dir}")
+                        continue
+                    if not os.path.isdir(created_dir):
+                        errors.append(f"创建目标已不是文件夹，无法删除: {created_dir}")
+                        continue
+                    # 只有目录仍为空时才允许撤销，避免误删用户后来放入的内容。
+                    if os.listdir(created_dir):
+                        errors.append(f"创建的文件夹已包含内容，未删除: {created_dir}")
+                        continue
+                    os.rmdir(created_dir)
+                    action.is_undone = True
+                    restored_count += 1
+                else:
+                    errors.append(f"不支持的操作类型: {action.action_type}")
             except Exception as e:
                 errors.append(f"回滚失败 [{action.src_path}]: {str(e)}")
 
-        tx.is_undone = True
+        tx.is_undone = all(action.is_undone for action in tx.actions)
         self._save_history()
 
+        success = not errors and tx.is_undone
+        if success:
+            message = f"成功撤销 {restored_count} 项操作"
+        elif restored_count:
+            message = f"已撤销 {restored_count} 项操作，仍有 {len(errors)} 项失败，可再次重试"
+        else:
+            message = "撤销失败，未能恢复任何操作"
+
         return {
-            "success": True,
-            "message": f"成功撤销 {restored_count} 项操作",
+            "success": success,
+            "message": message,
             "restored": restored_count,
             "errors": errors
         }
