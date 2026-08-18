@@ -4,10 +4,11 @@ from tkinter import ttk
 import customtkinter as ctk
 from typing import Optional, Callable
 from utils.file_utils import reveal_in_explorer
+from ui.theme import apply_treeview_theme
 
 class LazyFileTree(ctk.CTkFrame):
     """
-    虚拟懒加载文件目录树（解决大目录递归加载全量卡死问题）
+    虚拟懒加载文件目录树（基于 ttk.Treeview 深度定制 Modern Slate 风格）
     """
     def __init__(
         self,
@@ -16,7 +17,7 @@ class LazyFileTree(ctk.CTkFrame):
         on_directory_navigate: Optional[Callable[[str], None]] = None,
         **kwargs
     ):
-        super().__init__(master, **kwargs)
+        super().__init__(master, fg_color="transparent", **kwargs)
         self.on_directory_selected = on_directory_selected
         self.on_directory_navigate = on_directory_navigate
         self.current_root_path = ""
@@ -30,6 +31,9 @@ class LazyFileTree(ctk.CTkFrame):
 
         v_scroll = ttk.Scrollbar(tree_container, orient="vertical")
         h_scroll = ttk.Scrollbar(tree_container, orient="horizontal")
+
+        self.style = ttk.Style()
+        apply_treeview_theme(self.style, ctk.get_appearance_mode())
 
         self.tree = ttk.Treeview(
             tree_container,
@@ -49,6 +53,10 @@ class LazyFileTree(ctk.CTkFrame):
         self.tree.bind("<<TreeviewOpen>>", self._on_node_open)
         self.tree.bind("<<TreeviewSelect>>", self._on_node_select)
         self.tree.bind("<Double-1>", self._on_double_click)
+
+    def update_theme(self, mode: str):
+        """深浅色模式切换响应"""
+        apply_treeview_theme(self.style, mode)
 
     def set_root_path(self, root_path: str):
         """设置根路径并初始化第一层节点"""
@@ -92,7 +100,6 @@ class LazyFileTree(ctk.CTkFrame):
 
     def _on_node_open(self, event):
         """当用户点击 [+] 展开目录时触发懒加载"""
-        # 扫描当前已处于 open 状态且未加载真实子节点的项
         def check_node(item_id):
             children = self.tree.get_children(item_id)
             if children and len(children) == 1 and self.tree.item(children[0], "text") == "__dummy__":

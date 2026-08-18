@@ -6,9 +6,14 @@ from core.batch_ops import BatchOps
 from utils.task_runner import TaskRunner
 from ui.components.result_table import ResultTable
 from ui.components.progress_panel import ProgressPanel
+from ui.theme import (
+    COLOR_PRIMARY, COLOR_PRIMARY_HOVER,
+    COLOR_ACTION_ALT, COLOR_ACTION_ALT_HOVER,
+    COLOR_DANGER, COLOR_DANGER_HOVER
+)
 
 class BatchTab(ctk.CTkFrame):
-    """批量操作标签页：批量创建、重命名、安全删除"""
+    """批量操作标签页：批量创建、重命名、安全删除 (Modern Slate Modular Card)"""
 
     def __init__(self, master, get_current_path: Callable[[], str], on_changed: Optional[Callable[[], None]] = None, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
@@ -19,84 +24,129 @@ class BatchTab(ctk.CTkFrame):
         self._build_ui()
 
     def _build_ui(self):
-        # 1. 顶部输入卡片
-        input_card = ctk.CTkFrame(self)
-        input_card.pack(fill="x", padx=10, pady=(10, 8))
+        # 1. 顶部输入与控制卡片
+        input_card = ctk.CTkFrame(
+            self,
+            corner_radius=10,
+            border_width=1,
+            border_color=("gray85", "#2E3648"),
+            fg_color=("white", "#1B1F2A")
+        )
+        input_card.pack(fill="x", padx=10, pady=(6, 8))
 
         # 前缀与后缀
         fix_row = ctk.CTkFrame(input_card, fg_color="transparent")
-        fix_row.pack(fill="x", padx=15, pady=(8, 4))
+        fix_row.pack(fill="x", padx=16, pady=(10, 4))
 
-        ctk.CTkLabel(fix_row, text="统一前缀:").pack(side="left")
-        self.prefix_entry = ctk.CTkEntry(fix_row, width=120, placeholder_text="可选前缀")
-        self.prefix_entry.pack(side="left", padx=(5, 20))
+        ctk.CTkLabel(fix_row, text="统一前缀:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.prefix_entry = ctk.CTkEntry(fix_row, width=130, height=28, placeholder_text="可选前缀")
+        self.prefix_entry.pack(side="left", padx=(6, 20))
 
-        ctk.CTkLabel(fix_row, text="统一后缀:").pack(side="left")
-        self.suffix_entry = ctk.CTkEntry(fix_row, width=120, placeholder_text="可选后缀")
-        self.suffix_entry.pack(side="left", padx=(5, 10))
+        ctk.CTkLabel(fix_row, text="统一后缀:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.suffix_entry = ctk.CTkEntry(fix_row, width=130, height=28, placeholder_text="可选后缀")
+        self.suffix_entry.pack(side="left", padx=(6, 10))
 
-        # 文本框与提示
+        # 文本框与操作按钮组
         text_row = ctk.CTkFrame(input_card, fg_color="transparent")
-        text_row.pack(fill="x", padx=15, pady=(4, 8))
+        text_row.pack(fill="x", padx=16, pady=(4, 12))
 
         left_text_col = ctk.CTkFrame(text_row, fg_color="transparent")
         left_text_col.pack(side="left", fill="both", expand=True)
 
-        ctk.CTkLabel(left_text_col, text="📝 名称列表（每行一个；重命名请用英文逗号分隔：原名,新名）：", font=ctk.CTkFont(size=12)).pack(anchor="w", pady=(0, 2))
+        ctk.CTkLabel(
+            left_text_col,
+            text="📝 名称清单 (每行一项；重命名模式格式：原名,新名)：",
+            font=ctk.CTkFont(size=12),
+            text_color=("gray30", "gray75")
+        ).pack(anchor="w", pady=(0, 4))
         
-        self.names_textbox = ctk.CTkTextbox(left_text_col, height=80, font=ctk.CTkFont(family="Consolas", size=12))
+        self.names_textbox = ctk.CTkTextbox(
+            left_text_col,
+            height=75,
+            font=ctk.CTkFont(family="Consolas", size=12),
+            fg_color=("#F8FAFC", "#12151B"),
+            border_width=1,
+            border_color=("gray80", "#2E3648"),
+            corner_radius=6
+        )
         self.names_textbox.pack(fill="x", expand=True)
 
-        # 操作按钮组
+        # 按钮列
         btn_col = ctk.CTkFrame(text_row, fg_color="transparent")
-        btn_col.pack(side="right", padx=(15, 0), fill="y")
+        btn_col.pack(side="right", padx=(16, 0), fill="y")
 
         self.btn_create = ctk.CTkButton(
             btn_col,
             text="📁 批量创建",
-            width=120,
-            fg_color="#1f6aa5",
-            hover_color="#144870",
+            width=135,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_PRIMARY,
+            hover_color=COLOR_PRIMARY_HOVER,
+            text_color="white",
             command=self._on_create_clicked
         )
-        self.btn_create.pack(pady=3)
+        self.btn_create.pack(pady=(0, 4))
 
         self.btn_rename_prev = ctk.CTkButton(
             btn_col,
-            text="✏️ 批量重命名",
-            width=120,
-            fg_color="#f0ad4e",
-            hover_color="#ec971f",
+            text="✏ 批量重命名",
+            width=135,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_ACTION_ALT,
+            hover_color=COLOR_ACTION_ALT_HOVER,
+            text_color="white",
             command=self._on_rename_clicked
         )
-        self.btn_rename_prev.pack(pady=3)
+        self.btn_rename_prev.pack(pady=4)
 
         self.btn_delete = ctk.CTkButton(
             btn_col,
-            text="🗑️ 安全删除(回收站)",
-            width=120,
-            fg_color="#d9534f",
-            hover_color="#c9302c",
+            text="🗑 安全删除(回收站)",
+            width=135,
+            height=30,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_DANGER,
+            hover_color=COLOR_DANGER_HOVER,
+            text_color="white",
             command=self._on_delete_clicked
         )
-        self.btn_delete.pack(pady=3)
+        self.btn_delete.pack(pady=(4, 0))
 
         # 2. 中间：操作预览与结果表格
-        self.result_table = ResultTable(
+        table_container = ctk.CTkFrame(
             self,
+            corner_radius=10,
+            border_width=1,
+            border_color=("gray85", "#2E3648"),
+            fg_color=("white", "#1B1F2A")
+        )
+        table_container.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+
+        table_header = ctk.CTkFrame(table_container, fg_color="transparent", height=30)
+        table_header.pack(fill="x", padx=12, pady=(8, 4))
+        ctk.CTkLabel(
+            table_header,
+            text="📋 批处理结果清单 (双击定位文件)",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=("gray20", "gray85")
+        ).pack(side="left")
+
+        self.result_table = ResultTable(
+            table_container,
             columns=[
-                ("old_name", "原名称 / 操作项", 220),
-                ("new_name", "新名称 / 目标", 220),
+                ("old_name", "原名称 / 操作项", 240),
+                ("new_name", "新名称 / 目标", 240),
                 ("status", "状态", 140),
                 ("old_path", "路径", 350)
-            ],
-            height=200
+            ]
         )
-        self.result_table.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        self.result_table.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         # 3. 底部进度面板
         self.progress_panel = ProgressPanel(self, on_cancel=self._on_cancel_clicked)
-        self.progress_panel.pack(fill="x", padx=10, pady=(0, 10))
+        self.progress_panel.pack(fill="x", padx=10, pady=(0, 8))
 
     def _get_input_lines(self):
         raw = self.names_textbox.get("1.0", "end").strip()

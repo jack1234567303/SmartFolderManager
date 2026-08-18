@@ -8,10 +8,17 @@ from utils.task_runner import TaskRunner
 from utils.file_utils import format_size
 from ui.components.result_table import ResultTable
 from ui.components.progress_panel import ProgressPanel
+from ui.theme import (
+    COLOR_PRIMARY, COLOR_PRIMARY_HOVER,
+    COLOR_ACTION_ALT, COLOR_ACTION_ALT_HOVER,
+    COLOR_CYAN, COLOR_CYAN_HOVER,
+    COLOR_DANGER, COLOR_DANGER_HOVER,
+    COLOR_SECONDARY, COLOR_SECONDARY_HOVER
+)
 from send2trash import send2trash
 
 class ToolsTab(ctk.CTkFrame):
-    """实用工具箱：重复文件哈希查重与空文件夹清理"""
+    """实用工具箱：重复文件哈希查重与空文件夹清理 (Modern Slate Modular Card)"""
 
     def __init__(self, master, get_current_path: Callable[[], str], on_changed: Optional[Callable[[], None]] = None, **kwargs):
         super().__init__(master, fg_color="transparent", **kwargs)
@@ -24,43 +31,58 @@ class ToolsTab(ctk.CTkFrame):
         self._build_ui()
 
     def _build_ui(self):
-        # 1. 顶部操作工具栏
-        tools_card = ctk.CTkFrame(self)
-        tools_card.pack(fill="x", padx=10, pady=(10, 8))
+        # 1. 顶部操作工具栏卡片
+        tools_card = ctk.CTkFrame(
+            self,
+            corner_radius=10,
+            border_width=1,
+            border_color=("gray85", "#2E3648"),
+            fg_color=("white", "#1B1F2A")
+        )
+        tools_card.pack(fill="x", padx=10, pady=(6, 8))
 
         row1 = ctk.CTkFrame(tools_card, fg_color="transparent")
-        row1.pack(fill="x", padx=15, pady=10)
+        row1.pack(fill="x", padx=16, pady=12)
 
         # 重复文件工具组
-        ctk.CTkLabel(row1, text="🔍 重复文件查重:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(0, 5))
+        ctk.CTkLabel(row1, text="🔍 重复文件查重:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 6))
         self.scan_dup_btn = ctk.CTkButton(
             row1,
             text="扫描重复文件",
             width=120,
-            fg_color="#337ab7",
-            hover_color="#286090",
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_PRIMARY,
+            hover_color=COLOR_PRIMARY_HOVER,
+            text_color="white",
             command=self._on_scan_duplicates
         )
         self.scan_dup_btn.pack(side="left", padx=(0, 10))
 
         self.clean_dup_btn = ctk.CTkButton(
             row1,
-            text="🗑️ 清理多余副本(留一)",
-            width=150,
-            fg_color="#d9534f",
-            hover_color="#c9302c",
+            text="🗑 清理副本(留一)",
+            width=140,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_DANGER,
+            hover_color=COLOR_DANGER_HOVER,
+            text_color="white",
             command=self._on_clean_duplicate_copies
         )
-        self.clean_dup_btn.pack(side="left", padx=(0, 30))
+        self.clean_dup_btn.pack(side="left", padx=(0, 24))
 
         # 空文件夹工具组
-        ctk.CTkLabel(row1, text="📁 空文件夹整理:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(0, 5))
+        ctk.CTkLabel(row1, text="📁 空文件夹整理:", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left", padx=(0, 6))
         self.scan_empty_btn = ctk.CTkButton(
             row1,
             text="扫描空文件夹",
             width=120,
-            fg_color="#5bc0de",
-            hover_color="#31b0d5",
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_CYAN,
+            hover_color=COLOR_CYAN_HOVER,
+            text_color="white",
             command=self._on_scan_empty_folders
         )
         self.scan_empty_btn.pack(side="left", padx=(0, 10))
@@ -68,30 +90,50 @@ class ToolsTab(ctk.CTkFrame):
         self.clean_empty_btn = ctk.CTkButton(
             row1,
             text="🧹 一键清理空目录",
-            width=130,
-            fg_color="#f0ad4e",
-            hover_color="#ec971f",
+            width=135,
+            height=32,
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=COLOR_ACTION_ALT,
+            hover_color=COLOR_ACTION_ALT_HOVER,
+            text_color="white",
             command=self._on_clean_empty_folders
         )
         self.clean_empty_btn.pack(side="left")
 
         # 2. 中间：结果表格
-        self.result_table = ResultTable(
+        table_container = ctk.CTkFrame(
             self,
-            columns=[
-                ("item_name", "文件名 / 分组", 200),
-                ("type_tag", "属性 / 状态", 120),
-                ("size_info", "文件大小", 100),
-                ("wasted_info", "可释放空间 / 说明", 150),
-                ("path", "完整路径", 350)
-            ],
-            height=260
+            corner_radius=10,
+            border_width=1,
+            border_color=("gray85", "#2E3648"),
+            fg_color=("white", "#1B1F2A")
         )
-        self.result_table.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+        table_container.pack(fill="both", expand=True, padx=10, pady=(0, 8))
+
+        table_header = ctk.CTkFrame(table_container, fg_color="transparent", height=30)
+        table_header.pack(fill="x", padx=12, pady=(8, 4))
+        ctk.CTkLabel(
+            table_header,
+            text="📊 工具扫描结果清单 (双击定位文件)",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=("gray20", "gray85")
+        ).pack(side="left")
+
+        self.result_table = ResultTable(
+            table_container,
+            columns=[
+                ("item_name", "文件名 / 分组", 220),
+                ("type_tag", "属性 / 状态", 130),
+                ("size_info", "文件大小", 100),
+                ("wasted_info", "可释放空间 / 说明", 160),
+                ("path", "完整路径", 350)
+            ]
+        )
+        self.result_table.pack(fill="both", expand=True, padx=8, pady=(0, 8))
 
         # 3. 底部进度与日志
         self.progress_panel = ProgressPanel(self, on_cancel=self._on_cancel_clicked)
-        self.progress_panel.pack(fill="x", padx=10, pady=(0, 10))
+        self.progress_panel.pack(fill="x", padx=10, pady=(0, 8))
 
     def _on_cancel_clicked(self):
         self.task_runner.cancel_current_task()
@@ -156,7 +198,6 @@ class ToolsTab(ctk.CTkFrame):
 
         to_trash_files = []
         for g in self.duplicate_groups:
-            # 保留第一个，其余移至回收站
             for f in g["files"][1:]:
                 to_trash_files.append(f["path"])
 
@@ -184,8 +225,6 @@ class ToolsTab(ctk.CTkFrame):
                 files = group.get("files", [])
                 expected_md5 = group.get("md5", "")
 
-                # 先校验保留文件和所有副本，任意一个发生变化就跳过整组，
-                # 防止“保留文件已变更、旧副本仍被删除”的误清理。
                 group_valid = True
                 group_error = ""
                 for file_info in files:
