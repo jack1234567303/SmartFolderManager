@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['C:\\Users\\jwp\\Desktop\\文件管理图标.ico'],
+    icon=['app_icon.ico'],
 )
